@@ -2,8 +2,25 @@
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
 .venv/
 venv/
+.python-version
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# uv
+uv.lock.local
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 # OS
 .DS_Store
@@ -13,3 +30,15 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Board of Judges runtime
+.bojudges/
+judgements/
+evals/reports/*.json
+evals/reports/*.html
+!evals/reports/.gitkeep
