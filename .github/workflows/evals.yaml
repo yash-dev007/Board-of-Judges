@@ -1,0 +1,53 @@
+name: Evals
+
+# Real-model eval run. Must be manually triggered; stores API keys as secrets.
+# The result updates BENCHMARK.md via a PR (not auto-committed to main).
+
+on:
+  workflow_dispatch:
+    inputs:
+      judge:
+        description: "Judge ID to evaluate"
+        required: true
+        default: "sec-appsec-injection"
+      dataset:
+        description: "Dataset name"
+        required: true
+        default: "sqli_seed"
+      provider:
+        description: "auto | anthropic | google | openai"
+        required: true
+        default: "auto"
+
+jobs:
+  run-evals:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run evals (real model)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          uv run python evals/runner.py \
+            --dataset "${{ inputs.dataset }}" \
+            --judge "${{ inputs.judge }}" \
+            --provider "${{ inputs.provider }}"
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-${{ inputs.judge }}-${{ inputs.dataset }}
+          path: evals/reports/*.json
