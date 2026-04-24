@@ -1,85 +1,72 @@
-# Board of Judges
+# Board of Judges — project context
 
-Multi-agent code review system. 98 specialist AI judges review any artifact and deliver expert verdicts. A Chief Synthesizer distills everything into a final board summary.
+Tool-grounded, eval-backed panel code review. Runs as a standalone Python CLI (`boj`) and ships thin adapters for every major coding CLI.
 
-## Quick Commands
+## Current status (Phase 0 complete)
 
-```bash
-# Review a file — smart judge selection (up to 10 judges)
-/judge src/auth/login.py
+- `boj` CLI works: `boj judge <file>`, `list-judges`, `route`, `schema`, `version`
+- 33 offline tests pass (`uv run pytest`)
+- First judge plumbed end-to-end: `sec-appsec-injection`
+- Eval harness gates Phase 0 on `sqli_seed` (10-snippet benchmark)
+- Adapters shipped for: Claude Code, Gemini CLI, Codex, Antigravity, Aider, Cursor, Continue.dev, GitHub Copilot CLI, GitHub Action
 
-# Restrict to a specific domain
-/judge src/auth/login.py --panel security
-/judge schema.sql --panel database,backend
+Full plan: [`docs/v2_plan.md`](docs/v2_plan.md). Architecture: [`docs/architecture.md`](docs/architecture.md).
 
-# Single judge
-/judge src/auth/login.py --solo appsec-engineer
-
-# Run every matching judge (slower)
-/judge src/auth/login.py --all
-
-# Post Chief Summary as a GitHub PR comment
-/judge src/auth/login.py --post-to-pr
-
-# Use a judge directly (no skill needed)
-@judge-sec-application-security-appsec-engineer
-
-# List all available judges
-/list-judges
-
-# Regenerate all agent files from role stubs
-/bootstrap-judges
-```
-
-## How Judge Selection Works
-
-The coordinator detects the file type and activates matching tags:
-
-| File type | Judges activated |
-|-----------|-----------------|
-| `.py` `.go` `.rs` `.java` | Security, Backend, QA, Performance |
-| `.ts` `.tsx` `.jsx` `.css` | Security, Frontend, UX, Accessibility |
-| `.sql`, migrations | Security, Backend, Database |
-| Architecture docs | Security, Architecture, Strategy |
-| PRDs, specs | Product, Legal, Business |
-| `Dockerfile`, `*.yaml`, Terraform | Security, DevOps, Infrastructure |
-
-Default cap: 10 judges per review. Use `--all` to remove it.
-
-## Available Judge Sections
-
-| Prefix | Section | Tier |
-|--------|---------|------|
-| `judge-sec-*` | Security, Privacy & Compliance | 1 — Foundation |
-| `judge-eng-*` | Engineering & Architecture | 1 — Foundation |
-| `judge-infra-*` | Infrastructure, Cloud & Ops | 2 — Domain |
-| `judge-ai-*` | Data Science & AI | 2 — Domain |
-| `judge-ux-*` | Product, Design & UX | 3 — Quality/Ops |
-| `judge-qa-*` | Quality, Testing & Performance | 3 — Quality/Ops |
-| `judge-domain-*` | Specialized Industry Domains | 3 — Quality/Ops |
-| `judge-biz-*` | Business, Legal & Corporate | 4 — Strategy |
-| `judge-crisis-*` | Crisis & Support | 4 — Strategy |
-
-## Project Layout
-
-```
-.claude/
-  agents/          88 judge agents + synthesizer (project-local, ships with repo)
-  skills/          /judge, /bootstrap-judges, /list-judges skill definitions
-scripts/
-  bootstrap_claude_judges.py   Source of truth for all judge definitions
-judgements/        Timestamped review reports saved here
-docs/design.md     Full system design specification
-```
-
-## Adding a New Judge
-
-Open `scripts/bootstrap_claude_judges.py` and add an entry to the `JUDGES` list, then run:
+## Quick commands
 
 ```bash
-python scripts/bootstrap_claude_judges.py
+# Install
+uv sync --all-extras --dev
+
+# Run the board
+uv run boj judge path/to/file.py
+uv run boj judge path/to/file.py --panel security
+uv run boj judge path/to/file.py --solo sec-appsec-injection
+uv run boj judge path/to/file.py --all --format json
+
+# Inspect
+uv run boj list-judges
+uv run boj route path/to/file.py
+uv run boj schema | head -40
+
+# Evals
+uv run python evals/runner.py --dataset sqli_seed --judge sec-appsec-injection --provider mock
+uv run python evals/runner.py --dataset sqli_seed --judge sec-appsec-injection  # uses judge's model; real API call
+
+# Tests
+uv run pytest
+uv run pytest --cov=bojudges -v
 ```
 
-Or via skill: `/bootstrap-judges`
+## Via Claude Code
 
-The script is idempotent — re-running updates existing agents without losing manual edits to files not covered by the template.
+The v2 skill `/judge-v2 <file>` shells out to `boj`. Prefer it over the legacy `/judge`. The 88 legacy role-play agents live at `.claude/agents/extended/` (uncalibrated, preserved for backwards compat).
+
+## Where to edit what
+
+| Task | Touch |
+|------|-------|
+| Add a judge | `src/bojudges/judges/builtin/<id>/{manifest.yaml,persona.md,exemplars.jsonl}` |
+| Add an eval dataset | `evals/datasets/<name>/{ground_truth.yaml,snippets/...}` |
+| Add a provider | `src/bojudges/providers/<name>_provider.py` + registry |
+| Add a tool integration | `src/bojudges/tools/<name>.py` |
+| Add a host adapter | `adapters/<host>/` |
+| Edit the verdict schema | `src/bojudges/schema/verdict.py` (bump version on breaking changes) |
+| Change judge selection | `src/bojudges/core/panel.py` |
+| Change routing | `src/bojudges/core/router.py` |
+
+## Non-negotiables (see memory for full list)
+
+- No new judges without an eval dataset ≥ 10 snippets.
+- Every claim on the README or BENCHMARK.md must cite a real eval number.
+- Adapters do NOT fork persona prompts — they invoke `boj`.
+- Do not remove the multi-CLI adapter layer. This project is explicitly not Claude-only.
+
+## Legacy
+
+The original 88 role-play markdown judges are preserved at `.claude/agents/extended/`. They are NOT loaded by `boj`. They exist for:
+
+1. Backwards compat for users of the v1 `/judge` skill.
+2. Source material for future calibrated judges (port one at a time, add eval data, promote).
+
+`scripts/bootstrap_claude_judges.py` still regenerates them from the Python list, unchanged.

@@ -1,342 +1,240 @@
 # Board of Judges
 
-**A multi-agent code review system for Claude Code.** Submit any artifact — code, architecture docs, SQL schemas, Terraform configs, PRDs — and a panel of specialist AI judges reviews it sequentially, each reading what the previous judge found before writing their own verdict. A Chief Synthesizer then distills all verdicts into a final board summary.
+**Tool-grounded, eval-backed panel code review. Runs in every major coding CLI.**
 
-Every judge is also independently accessible as a solo agent via Claude Code's native `@agent-name` syntax.
+`boj` classifies a submission, picks the right specialist judges, runs each in parallel against static-analysis tools + a language model, verifies every cited line, and emits a structured verdict.
 
----
-
-## What It Does
-
-- **88 specialist judges** across 9 domains: Security, Engineering, Infrastructure, AI/Data, UX, QA, Domain Specialists, Business/Legal, and Crisis/Support
-- **Smart selection**: the coordinator detects your file type and picks the most relevant judges automatically (default cap: 10)
-- **Sequential review with context**: each judge reads compressed prior verdicts before writing their own — findings compound
-- **Chief Synthesis**: a final summary with verdict table, critical issues, warnings, consensus, and recommended action
-- **Persistent reports**: every review saved to `judgements/` as a timestamped markdown file
-- **Solo access**: use any judge directly with `@judge-<name>` without running the full board
+> **Status:** v0.2 alpha — Phase 0 complete. Pipeline end-to-end on mock provider. First calibrated judge: `sec-appsec-injection`.
 
 ---
 
-## Requirements
+## Why this exists
 
-- [Claude Code](https://claude.ai/code) (CLI, desktop app, or IDE extension)
-- The repo cloned locally — the `.claude/` directory ships with it
-
-No installation, no dependencies, no API keys beyond your existing Claude Code setup.
+1. Most AI code-review tools hallucinate. We ground every finding in a reproducible tool output and verify line citations.
+2. Most AI code-review tools publish zero accuracy numbers. We publish ours — per judge, per dataset, in [`BENCHMARK.md`](BENCHMARK.md).
+3. Most AI code-review tools lock you to one host. We ship [adapters for every major coding CLI](adapters/).
 
 ---
 
-## Quick Start
+## Quick start
 
 ```bash
-# Clone the repo
-git clone https://github.com/your-org/board-of-judges
+# Install
+git clone https://github.com/yash-dev007/board-of-judges
 cd board-of-judges
+uv sync --all-extras --dev   # or: pip install -e .
 
-# Open in Claude Code, then run a review
-/judge path/to/your/file.py
+# Set one API key (any provider works; judges declare which model they want)
+export ANTHROPIC_API_KEY=sk-ant-...
+# or GOOGLE_API_KEY, or OPENAI_API_KEY
+
+# Run
+uv run boj judge path/to/your/file.py
 ```
 
-That's it. Agents are project-local — they activate the moment you open this directory in Claude Code.
-
----
-
-## Usage
-
-### Full Board Review
+### Offline smoke test (no API key needed)
 
 ```bash
-/judge src/auth/login.py
-```
-
-The coordinator detects the file type, selects up to 10 relevant judges ordered by tier, runs them sequentially, then produces a Chief Summary. The full report is saved to `judgements/`.
-
-### Filter by Domain
-
-```bash
-# Security judges only
-/judge src/auth/login.py --panel security
-
-# Multiple panels
-/judge schema.sql --panel database,backend
-
-# All matching judges (removes 10-judge cap)
-/judge src/auth/login.py --all
-```
-
-### Single Judge
-
-```bash
-# Via skill
-/judge src/auth/login.py --solo appsec-engineer
-
-# Via native Claude Code agent syntax (no skill needed)
-@judge-sec-application-security-appsec-engineer
-```
-
-Then describe what you want reviewed in your message.
-
-### Post to GitHub PR
-
-```bash
-/judge src/auth/login.py --post-to-pr
-```
-
-After saving the report locally, posts the Chief Summary as a comment on the current branch's open PR using `gh`.
-
-### List All Judges
-
-```bash
-/list-judges
-```
-
-Displays all 98 judges grouped by section with their tags and filenames — useful for finding the right `--solo` or `--panel` target.
-
----
-
-## Verdict Format
-
-### Individual Judge
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-JUDGE — APPLICATION SECURITY (APPSEC) ENGINEER    [TIER 1]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-VERDICT: ⚠️ WARN
-
-CORE FINDING:
-JWT tokens stored in localStorage — vulnerable to XSS exfiltration.
-Session expiry hardcoded at 30 days with no refresh rotation.
-
-DETAILED ANALYSIS:
-Login handler at line 47 writes token directly to localStorage.
-Any XSS vector on this domain can exfiltrate it. 30-day expiry
-means a stolen token is valid for weeks with no revocation path.
-
-RECOMMENDATIONS:
-1. Move JWT to httpOnly cookie — inaccessible to JavaScript
-2. Implement refresh token rotation (short-lived access tokens)
-3. Add Content-Security-Policy header to reduce XSS surface
-
-SCORE: 5/10
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-### Chief Summary
-
-```
-╔══════════════════════════════════════════════════════════╗
-║           BOARD OF JUDGES — CHIEF SUMMARY                ║
-╚══════════════════════════════════════════════════════════╝
-
-SUBMISSION:     src/auth/login.py
-JUDGES:         7  |  DATE: 2026-04-22  |  TIME: 14:32
-
-BOARD VERDICT:  ⚠️ WARN
-
-┌──────────────────────────────────────────┬──────────┬───────┐
-│ Judge                                    │ Verdict  │ Score │
-├──────────────────────────────────────────┼──────────┼───────┤
-│ Principal Systems Architect              │ ✅ PASS  │  7/10 │
-│ Application Security Engineer           │ ⚠️ WARN  │  5/10 │
-│ Lead Backend Engineer                   │ ⚠️ WARN  │  6/10 │
-│ IAM Specialist                          │ ❌ FAIL  │  3/10 │
-│ QA Automation Architect                 │ ✅ PASS  │  8/10 │
-│ Performance Engineer                    │ ✅ PASS  │  7/10 │
-│ CISO                                    │ ⚠️ WARN  │  5/10 │
-├──────────────────────────────────────────┼──────────┼───────┤
-│ OVERALL BOARD SCORE                      │          │ 5.9/10│
-└──────────────────────────────────────────┴──────────┴───────┘
-
-CRITICAL ISSUES (must fix before ship):
-1. [IAM] No token rotation — stolen credentials valid indefinitely
-2. [Security] JWT in localStorage — XSS exfiltration risk
-
-WARNINGS (fix soon):
-3. [Backend] No rate limiting on login endpoint
-4. [CISO] No audit log for failed authentication attempts
-
-CONSENSUS:
-Security judges unanimously flag token storage. IAM raises this
-to a pre-ship blocker. Architecture passes on structure — the
-pattern is sound but the implementation is dangerous.
-
-RECOMMENDED ACTION: Fix CRITICAL issues, re-judge security panel.
+uv run pytest                                 # runs 33 tests, ~1s
+uv run boj list-judges                        # shows the calibrated roster
+uv run boj route path/to/file.py              # see how the router would classify
+uv run python evals/runner.py \               # validate the full pipeline
+    --dataset sqli_seed \
+    --judge sec-appsec-injection \
+    --provider mock
 ```
 
 ---
 
-## The Judges
+## How it works
 
-### Tier 1 — Foundation (run first, every other judge builds on these)
+```
+  Adapter (Claude Code / Gemini CLI / Codex / Cursor / Aider / …)
+                        │
+                        ▼
+                ┌──────────────┐
+                │   boj CLI    │   Python, MIT-licensed, pip-installable
+                └──────┬───────┘
+                       │
+        ┌──────────────┼──────────────┐
+        ▼              ▼              ▼
+   ┌────────┐    ┌──────────┐   ┌──────────┐
+   │ Router │───▶│  Panel   │──▶│Dispatcher│
+   └────────┘    └──────────┘   └─────┬────┘
+                                      │ parallel, one LLM call per judge
+                  ┌───────────────────┼───────────────────┐
+                  ▼                   ▼                   ▼
+             ┌────────┐         ┌──────────┐         ┌──────────┐
+             │Judge A │         │ Judge B  │         │ Judge C  │
+             │ tools+ │         │  tools+  │         │  tools+  │
+             │  LLM   │         │   LLM    │         │   LLM    │
+             └───┬────┘         └─────┬────┘         └─────┬────┘
+                 └────────┬───────────┴────────┬───────────┘
+                          ▼                    ▼
+                  Verifier (line+symbol)   Synthesizer (rule-based)
+                          │                    │
+                          └────────┬───────────┘
+                                   ▼
+                            JSON + Markdown report
+```
 
-**Security, Privacy & Compliance** (`--panel security`)
-- Application Security (AppSec) Engineer
-- Chief Information Security Officer (CISO)
-- Cloud Security Architect
-- Cryptography & Encryption Specialist
-- Defensive Security / Blue Team Lead
-- GDPR & Data Privacy Compliance Officer
-- Governance, Risk and Compliance (GRC) Lead
-- Identity & Access Management (IAM) Specialist
-- Offensive Security / Red Team Lead
-- Open Source Security & Licensing Auditor
-- SOC2 & ISO 27001 Auditor
-- Threat Intelligence Analyst
-
-**Engineering & Architecture** (`--panel architecture`)
-- Principal Systems Architect
-- Lead Backend Engineer
-- Frontend Platform Architect
-- Distributed Systems Specialist
-- Microservices Orchestration Expert
-- API Strategy & Governance Lead
-- Concurrency & Multithreading Specialist
-- Embedded Systems & Firmware Engineer
-- Fullstack Generalist Critic
-- Legacy Systems Modernization Expert
-- Mobile Solutions Architect
-- Systems Refactoring Strategist
-
-### Tier 2 — Domain
-
-**Infrastructure, Cloud & Ops** (`--panel infrastructure`)
-- Cloud Infrastructure Architect · Containerization & Kubernetes Specialist
-- Database Reliability Engineer (DBRE) · DevOps Automation Engineer
-- Disaster Recovery & BCP Strategist · Edge Computing Specialist
-- FinOps & Cloud Cost Optimizer · Linux Kernel & OS Hardening Expert
-- Network Architect (SDN/VPC) · Observability & Telemetry Architect
-- Platform Engineer (IDP Specialist) · Site Reliability Engineer (SRE)
-
-**Data Science & AI** (`--panel ai`)
-- AI/ML Research Scientist · AI Ethics & Bias Auditor
-- AI Product Safety Officer · Computer Vision Specialist
-- Data Architect (Big Data/Warehousing) · Data Pipeline & ETL Engineer
-- Feature Engineering Specialist · MLOps & Machine Learning Engineer
-- NLP Lead · Neural Network Optimization Engineer
-- Vector Database & RAG Architect · Quantitative Data Analyst
-
-### Tier 3 — Quality/Ops
-
-**Quality, Testing & Performance** (`--panel testing`)
-- QA Automation Architect (SDET) · Chaos Engineering Specialist
-- Lead Integration Tester · Manual & Exploratory Tester
-- Performance & Load Testing Engineer · Security Regression Tester
-- User Acceptance Testing (UAT) Coordinator · Mobile Device Lab Manager
-
-**Product, Design & UX** (`--panel ux`)
-- UX Research Lead · UI/UX Visual Critic · Interaction Designer
-- Information Architect · Design Systems Architect
-- Accessibility (A11y) & Inclusion Specialist
-- Customer Journey Mapper · Conversion Rate Optimization Specialist
-- Product Strategy Director · Technical Product Manager (TPM)
-
-**Specialized Industry Domains** (`--panel domain`)
-- Blockchain & Smart Contract Auditor · Fintech Compliance & Payment Specialist
-- Healthcare Systems (HIPAA/HL7) Expert · IoT & Hardware Interaction Specialist
-- AR/VR & Spatial Computing Architect · Game Engine & Physics Lead
-- EdTech Pedagogical Consultant · E-commerce & Logistics Strategist
-
-### Tier 4 — Strategy
-
-**Business, Legal & Corporate** (`--panel business`)
-- Chief Technology Officer (CTO) · Legal & Intellectual Property Counsel
-- Engineering Manager (EM) · Technical Business Analyst
-- Agile Coach & Scrum Master · Release Train Engineer (RTE)
-- Developer Experience (DX) Engineer · Growth & GrowthHacking Engineer
-- Corporate Sustainability Auditor · Technical Documentation & Content Lead
-
-**Crisis & Support** (`--panel crisis`)
-- Incident Commander · PostMortem & Root Cause Analyst
-- Customer Support Engineering Lead · Technical Training & Enablement Lead
+Full design: [`docs/architecture.md`](docs/architecture.md).
 
 ---
 
-## Project Structure
+## Runs in every major coding CLI
+
+| Host | Path | Activation |
+|------|------|------------|
+| Plain terminal | everywhere | `boj judge <file>` |
+| Claude Code | [`adapters/claude-code/`](adapters/claude-code/) | `/judge-v2 <file>` |
+| Gemini CLI | [`adapters/gemini-cli/`](adapters/gemini-cli/) | `/judge <file>` |
+| OpenAI Codex | [`adapters/codex/`](adapters/codex/) | via `AGENTS.md` |
+| Google Antigravity | [`adapters/antigravity/`](adapters/antigravity/) | config entry |
+| Aider | [`adapters/aider/`](adapters/aider/) | `!boj judge <file>` |
+| Cursor | [`adapters/cursor/`](adapters/cursor/) | `.cursorrules` |
+| Continue.dev | [`adapters/continue/`](adapters/continue/) | `/judge` slash command |
+| GitHub Copilot CLI | [`adapters/github-copilot-cli/`](adapters/github-copilot-cli/) | shell alias |
+| GitHub Action | [`adapters/github-action/`](adapters/github-action/) | in your workflow |
+
+Adding a host is typically 3 files. See [`docs/adapters.md`](docs/adapters.md).
+
+---
+
+## Providers
+
+Any judge can target any provider. The `model` field in a judge's `manifest.yaml` drives the choice:
+
+| Provider | Models | Env var |
+|----------|--------|---------|
+| Anthropic | `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5` | `ANTHROPIC_API_KEY` |
+| Google | `gemini-2.5-pro`, `gemini-2.5-flash` | `GOOGLE_API_KEY` |
+| OpenAI | `gpt-4.1`, `gpt-4o`, `o3-mini` | `OPENAI_API_KEY` |
+
+---
+
+## What's in v0.2 (Phase 0)
+
+- ✅ `boj` CLI: `judge`, `list-judges`, `route`, `schema`, `version`
+- ✅ Provider abstraction: Anthropic (ready), Google + OpenAI (plug-in stubs; require optional deps)
+- ✅ Tool grounding via `semgrep` (graceful fallback when not installed)
+- ✅ Line + symbol verifier — every issue's citation is checked before the user sees it
+- ✅ Rule-based synthesizer with disagreement surfacing
+- ✅ JSON schema v1 (Pydantic) for every report
+- ✅ RunManifest with fingerprint (model + prompt + exemplar hashes) — fully reproducible
+- ✅ Eval harness with `sqli_seed` (10-snippet SQLi + command-injection benchmark)
+- ✅ 33 offline tests
+- ✅ Adapters for 9 hosts
+- ✅ First calibrated-in-progress judge: `sec-appsec-injection`
+- ✅ 88 legacy role-play judges preserved at `.claude/agents/extended/` (uncalibrated)
+
+What's not in v0.2 yet:
+- Additional judges beyond the first (calibrated ones arrive in Phase 2)
+- Real-model BENCHMARK numbers (requires API key to generate)
+- Prompt-injection adversarial eval set
+- GitHub PR auto-comment polish
+- Landing page
+
+See [`docs/v2_plan.md`](docs/v2_plan.md) for the full roadmap.
+
+---
+
+## Verdict structure
+
+Every report is valid JSON. A minimal verdict:
+
+```json
+{
+  "submission": { "path": "login.py", "sha256": "...", "language": "python" },
+  "judges": [
+    {
+      "judge_id": "sec-appsec-injection",
+      "judge_name": "Application Security — Injection Specialist",
+      "tier": 1,
+      "verdict": "FAIL",
+      "score": 2.0,
+      "confidence": 0.92,
+      "core_finding": "String concatenation into cursor.execute() at line 4.",
+      "issues": [
+        {
+          "id": "sec-appsec-injection:0",
+          "severity": "CRITICAL",
+          "title": "SQL injection via string concatenation",
+          "file": "login.py",
+          "line": 4,
+          "cwe": "CWE-89",
+          "category": "sql-injection",
+          "fix_hint": "Use parameterized queries: cur.execute(sql, (name,))",
+          "verified": true,
+          "tool_source": "hybrid",
+          "tool_citations": ["semgrep:python.django.security.sql-injection@login.py:4"]
+        }
+      ]
+    }
+  ],
+  "synthesis": {
+    "board_verdict": "FAIL",
+    "board_score": 2.0,
+    "critical_issues": [...],
+    "consensus": "...",
+    "disagreements": [...],
+    "recommended_action": "Fix 1 critical issue(s) before merging."
+  },
+  "manifest": {
+    "bojudges_version": "0.2.0a0",
+    "schema_version": "1.0",
+    "models": { "sec-appsec-injection": "claude-sonnet-4-6" },
+    "temperature": 0.3,
+    "seed": 42,
+    "prompt_hashes": { "sec-appsec-injection": "abc123..." },
+    "total_cost_usd": 0.04,
+    "total_duration_ms": 2100
+  }
+}
+```
+
+---
+
+## Benchmarks
+
+Every quality claim is backed by a number in [`BENCHMARK.md`](BENCHMARK.md). A judge is NOT promoted to the core roster until it hits the Phase 0 gate (precision ≥ 0.70, recall ≥ 0.60, ECE ≤ 0.15) on a public eval set.
+
+---
+
+## Project layout
 
 ```
 board-of-judges/
+├── src/bojudges/              Core engine (Python)
+│   ├── schema/                Pydantic models
+│   ├── providers/             Anthropic, Google, OpenAI, Mock
+│   ├── tools/                 semgrep (more arriving)
+│   ├── core/                  Router, Panel, Dispatcher, Verifier, Synthesizer
+│   ├── judges/                Base class + registry + builtin/
+│   ├── rendering/             Terminal + Markdown
+│   └── cli/                   typer app — `boj`
+├── adapters/                  Thin shims for each coding CLI
+├── evals/                     Benchmark datasets + runner
+├── tests/                     Offline pytest suite
+├── docs/                      Plan, architecture, adapter guide
 ├── .claude/
-│   ├── agents/                      # 88 judge agents + synthesizer
-│   │   ├── judge-sec-*.md           # Security & Compliance (Tier 1)
-│   │   ├── judge-eng-*.md           # Engineering & Architecture (Tier 1)
-│   │   ├── judge-infra-*.md         # Infrastructure & Ops (Tier 2)
-│   │   ├── judge-ai-*.md            # Data Science & AI (Tier 2)
-│   │   ├── judge-ux-*.md            # Product, Design & UX (Tier 3)
-│   │   ├── judge-qa-*.md            # Quality & Performance (Tier 3)
-│   │   ├── judge-domain-*.md        # Specialized Domains (Tier 3)
-│   │   ├── judge-biz-*.md           # Business & Legal (Tier 4)
-│   │   ├── judge-crisis-*.md        # Crisis & Support (Tier 4)
-│   │   └── judge-synthesizer.md     # Chief Synthesizer
-│   └── skills/
-│       ├── judge/                   # /judge coordinator
-│       ├── bootstrap-judges/        # /bootstrap-judges
-│       └── list-judges/             # /list-judges
-├── scripts/
-│   └── bootstrap_claude_judges.py   # Source of truth for all judge definitions
-├── judgements/                      # Saved review reports (timestamped)
-├── docs/design.md                   # System design specification
-├── CLAUDE.md                        # Claude Code project context
-└── README.md
+│   ├── skills/                v2 skill — shells out to boj
+│   └── agents/extended/       88 legacy role-play judges (preserved)
+├── pyproject.toml
+├── LICENSE                    MIT
+├── README.md
+├── BENCHMARK.md               Published accuracy numbers
+└── CONTRIBUTING.md
 ```
-
----
-
-## Adding or Modifying Judges
-
-`scripts/bootstrap_claude_judges.py` is the single source of truth. Agent files are generated output — edit the script, not the files directly.
-
-**Add a new judge:**
-1. Open `scripts/bootstrap_claude_judges.py`
-2. Add an entry to the `JUDGES` list with: slug, role name, tier (1–4), tags, expertise bullets, and "what you miss" insight
-3. Run `/bootstrap-judges` (or `python scripts/bootstrap_claude_judges.py`)
-
-**Inspect a generated agent:**
-```bash
-python scripts/bootstrap_claude_judges.py --review judge-sec-application-security-appsec-engineer.md
-```
-
-**Preview what would be generated (dry run):**
-```bash
-python scripts/bootstrap_claude_judges.py --dry-run
-```
-
----
-
-## How Context Is Managed
-
-To prevent context bloat across a large panel, the coordinator compresses verdicts between passes:
-
-- Each judge receives: `[full submission] + [compressed prior verdicts]`
-- Compression format: `Judge Name | Verdict | Score | Core Finding (1 sentence)`
-- Full verdicts are held by the coordinator and passed to the Chief Synthesizer in one shot
-
-This keeps individual judge prompts lean while preserving synthesis quality.
-
----
-
-## Saved Reports
-
-Every review is saved to `judgements/` with a timestamped filename:
-
-```
-judgements/
-├── 2026-04-22-14-32-login-py.md
-├── 2026-04-22-15-10-schema-sql.md
-└── 2026-04-22-16-45-product-prd.md
-```
-
-Each file contains the full individual verdicts followed by the Chief Summary. Reports are plain markdown — diffable, greppable, and committable to git.
-
----
-
-## Design
-
-The full system design document is at [`docs/design.md`](docs/design.md).
 
 ---
 
 ## License
 
-MIT
+MIT. See [`LICENSE`](LICENSE).
+
+---
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Every quality-affecting change must ship with an eval run.
