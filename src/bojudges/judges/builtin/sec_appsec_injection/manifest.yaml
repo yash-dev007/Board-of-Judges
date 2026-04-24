@@ -1,0 +1,24 @@
+id: sec-appsec-injection
+name: Application Security — Injection Specialist
+tier: 1
+tags:
+  - security
+  - backend
+  - code
+risk_tags:
+  - sql-injection
+  - command-injection
+  - serialization
+model: claude-sonnet-4-6
+persona_file: persona.md
+exemplars_file: exemplars.jsonl
+tools:
+  - name: semgrep
+    configs:
+      - p/sql-injection
+      - p/command-injection
+      - p/security-audit
+calibration:
+  # Filled in after Phase 0 eval run. Null = unfitted (confidence reported raw).
+  temperature: null
+  reliability: {}

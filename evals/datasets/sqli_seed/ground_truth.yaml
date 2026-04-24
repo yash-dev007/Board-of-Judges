@@ -1,0 +1,98 @@
+# Ground-truth annotations for the Phase 0 SQLi + command-injection seed set.
+# Each snippet declares: filename, language, expected verdict, and the list of
+# ground-truth issues a well-calibrated judge should surface.
+#
+# `verdict` is the expected board-level verdict: PASS | WARN | FAIL.
+# `issues` lists expected findings. For PASS snippets this is empty.
+# `tricky_notes` describes the trap each snippet lays (useful for error analysis).
+
+dataset: sqli_seed
+description: >
+  10 Python snippets — 5 injection-vulnerable, 5 clean. Used for the Phase 0
+  gate (precision >= 0.70, recall >= 0.60, ECE <= 0.15 on the sec-appsec-injection
+  judge).
+created: 2026-04-24
+schema_version: 1
+
+snippets:
+  - file: vuln_01_string_concat.py
+    language: python
+    verdict: FAIL
+    issues:
+      - category: sql-injection
+        cwe: CWE-89
+        line: 5
+        severity: CRITICAL
+    tricky_notes: classic `+` concatenation into an execute() call
+
+  - file: vuln_02_format.py
+    language: python
+    verdict: FAIL
+    issues:
+      - category: sql-injection
+        cwe: CWE-89
+        line: 4
+        severity: CRITICAL
+    tricky_notes: .format() usage — harder for regex, trivial for a real reader
+
+  - file: vuln_03_fstring.py
+    language: python
+    verdict: FAIL
+    issues:
+      - category: sql-injection
+        cwe: CWE-89
+        line: 6
+        severity: CRITICAL
+    tricky_notes: f-string interpolation into a raw SQL query
+
+  - file: vuln_04_cmd_injection.py
+    language: python
+    verdict: FAIL
+    issues:
+      - category: command-injection
+        cwe: CWE-78
+        line: 5
+        severity: CRITICAL
+    tricky_notes: subprocess.run with shell=True and string concatenation
+
+  - file: vuln_05_second_order.py
+    language: python
+    verdict: FAIL
+    issues:
+      - category: sql-injection
+        cwe: CWE-89
+        line: 12
+        severity: HIGH
+    tricky_notes: >
+      Second-order injection — data inserted safely, then read back and used
+      via %-formatting. Tests whether the judge follows dataflow.
+
+  - file: clean_01_parameterized.py
+    language: python
+    verdict: PASS
+    issues: []
+    tricky_notes: parameterized query — `%s` is a placeholder, not a format op
+
+  - file: clean_02_orm.py
+    language: python
+    verdict: PASS
+    issues: []
+    tricky_notes: SQLAlchemy ORM; no `text()` escape hatch
+
+  - file: clean_03_subprocess_list.py
+    language: python
+    verdict: PASS
+    issues: []
+    tricky_notes: subprocess.run with args as a list; shell=False (default)
+
+  - file: clean_04_shlex.py
+    language: python
+    verdict: PASS
+    issues: []
+    tricky_notes: user input passed through shlex.quote — explicit sanitization
+
+  - file: clean_05_allowlist.py
+    language: python
+    verdict: PASS
+    issues: []
+    tricky_notes: input validated against an explicit allow-list before any shell call
