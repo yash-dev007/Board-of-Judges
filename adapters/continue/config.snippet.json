@@ -1,0 +1,20 @@
+{
+  "slashCommands": [
+    {
+      "name": "judge",
+      "description": "Run the Board of Judges panel review on the current file.",
+      "step": "ShellCommandStep",
+      "params": {
+        "command": "boj judge ${fileName} --format markdown"
+      }
+    },
+    {
+      "name": "judge-security",
+      "description": "Run only security judges on the current file.",
+      "step": "ShellCommandStep",
+      "params": {
+        "command": "boj judge ${fileName} --panel security --format markdown"
+      }
+    }
+  ]
+}

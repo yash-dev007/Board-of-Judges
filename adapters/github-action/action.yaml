@@ -1,0 +1,93 @@
+name: "Board of Judges"
+description: "Tool-grounded, eval-backed panel code review. Runs on every changed file in the PR and posts a summary comment."
+author: "Board of Judges contributors"
+branding:
+  icon: "check-circle"
+  color: "purple"
+
+inputs:
+  panel:
+    description: "Comma-separated tag filter."
+    required: false
+    default: ""
+  judges_dir:
+    description: "Extra directory to load judges from."
+    required: false
+    default: ""
+  fail_on_verdict:
+    description: "Fail the action when board verdict is this (PASS | WARN | FAIL)."
+    required: false
+    default: "FAIL"
+  max_files:
+    description: "Max changed files to review per run (cost guard)."
+    required: false
+    default: "25"
+  post_comment:
+    description: "Post a summary comment on the PR (true | false)."
+    required: false
+    default: "true"
+  anthropic_api_key:
+    description: "Anthropic API key (if any judge uses Claude)."
+    required: false
+  google_api_key:
+    description: "Google API key (if any judge uses Gemini)."
+    required: false
+  openai_api_key:
+    description: "OpenAI API key (if any judge uses GPT)."
+    required: false
+
+outputs:
+  verdict:
+    description: "Overall board verdict (PASS | WARN | FAIL)."
+    value: ${{ steps.run.outputs.verdict }}
+  report_path:
+    description: "Path to the combined markdown report."
+    value: ${{ steps.run.outputs.report_path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout (if not already)
+      if: ${{ hashFiles('.git') == '' }}
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install boj
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f pyproject.toml ] && grep -q 'name = "bojudges"' pyproject.toml; then
+          pip install -e .
+        else
+          pip install bojudges
+        fi
+
+    - name: Run board on changed files
+      id: run
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        GOOGLE_API_KEY:    ${{ inputs.google_api_key }}
+        OPENAI_API_KEY:    ${{ inputs.openai_api_key }}
+      run: |
+        set -e
+        bash "${{ github.action_path }}/run.sh" \
+          --panel "${{ inputs.panel }}" \
+          --judges-dir "${{ inputs.judges_dir }}" \
+          --max-files "${{ inputs.max_files }}" \
+          --fail-on "${{ inputs.fail_on_verdict }}"
+
+    - name: Post PR comment
+      if: ${{ inputs.post_comment == 'true' && github.event_name == 'pull_request' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        if [ -f judgements/summary.md ]; then
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body-file judgements/summary.md
+        fi

@@ -1,0 +1,20 @@
+---
+description: Board of Judges — tool-grounded code review
+globs:
+  - "**/*"
+alwaysApply: false
+---
+
+# Board of Judges
+
+When asked to review, audit, or critique a file, run:
+
+```bash
+boj judge <file> --format markdown --markdown judgements/cursor-<timestamp>.md
+```
+
+Display the resulting markdown verbatim. Do not produce your own review.
+
+Exit code 0 = PASS/WARN, 1 = FAIL verdict, 2 = usage error.
+
+Flags: `--panel`, `--solo`, `--all`, `--dry-run`.

@@ -1,0 +1,35 @@
+# Board of Judges — Cursor rules
+
+This project ships a tool-grounded, eval-backed code review panel.
+
+## When the user asks for a review, audit, or critique
+
+Do NOT perform the review yourself. Run:
+
+```bash
+boj judge <file> --format markdown --markdown judgements/cursor-<timestamp>.md
+```
+
+Then read the markdown report and display its contents to the user. The
+Board's output is authoritative. You may answer clarifying questions about
+the findings, but do not overrule them without the user's explicit request.
+
+## When NOT to invoke the Board
+
+- Small stylistic changes, formatting, single-line fixes.
+- Files under 10 lines.
+- The user is asking you to WRITE code, not review it.
+
+## Configuration
+
+- Ensure `boj version` works before using — if missing:
+  `uv sync --dev` (preferred) or `pip install -e .` from the repo root.
+- Set `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, or `OPENAI_API_KEY` based on
+  which models the judges use.
+
+## Flags
+
+- `--panel security,backend` — tag filter
+- `--solo <judge-id>` — single judge
+- `--all` — remove 10-judge cap
+- `--dry-run` — preview panel, no LLM calls
