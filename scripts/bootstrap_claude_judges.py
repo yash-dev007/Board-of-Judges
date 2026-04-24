@@ -1951,9 +1951,14 @@ Examples:
                         help="Preview filenames without writing files")
     parser.add_argument("--review", metavar="FILENAME",
                         help="Display an existing agent file")
+    parser.add_argument("--output", metavar="DIR",
+                        default=".claude/agents/extended",
+                        help="Output directory (default: .claude/agents/extended). "
+                             "These legacy role-play agents are uncalibrated — see "
+                             ".claude/agents/extended/README.md.")
     args = parser.parse_args()
 
-    agents_dir = ".claude/agents"
+    agents_dir = args.output
 
     if args.review:
         path = os.path.join(agents_dir, args.review)
